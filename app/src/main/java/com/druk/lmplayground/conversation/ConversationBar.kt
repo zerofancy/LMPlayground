@@ -45,7 +45,8 @@ fun ConversationBar(
     scrollBehavior: TopAppBarScrollBehavior? = null,
     onSelectModelPressed: () -> Unit = { },
     onUnloadModelPressed: () -> Unit = { },
-    onNavIconPressed: () -> Unit = { }
+    onNavIconPressed: () -> Unit = { },
+    onInfoPressed: () -> Unit = { }
 ) {
     var functionalityNotAvailablePopupShown by remember { mutableStateOf(false) }
     if (functionalityNotAvailablePopupShown) {
@@ -116,23 +117,12 @@ fun ConversationBar(
         },
         actions = {
             if (modelInfo != null) {
-                // Info icon
+                // Info icon - shows timing report
                 Icon(
                     imageVector = Icons.Outlined.Info,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
-                        .clickable(onClick = onNavIconPressed)
-                        .padding(horizontal = 12.dp, vertical = 16.dp)
-                        .height(24.dp),
-                    contentDescription = stringResource(id = R.string.info)
-                )
-            }
-            else {
-                // Info icon
-                Icon(
-                    imageVector = Icons.Outlined.Info,
-                    tint = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier
+                        .clickable(onClick = onInfoPressed)
                         .padding(horizontal = 12.dp, vertical = 16.dp)
                         .height(24.dp),
                     contentDescription = stringResource(id = R.string.info)

@@ -5,14 +5,16 @@
 # Sets the minimum CMake version required for this project.
 cmake_minimum_required(VERSION 3.22.1)
 
-# include_directories(Vulkan-Hpp)
-add_subdirectory(llama.cpp)
-
-# Declares the project name. The project name can be accessed via ${ PROJECT_NAME},
-# Since this is the top level CMakeLists.txt, the project name is also accessible
-# with ${CMAKE_PROJECT_NAME} (both CMake variables are in-sync within the top level
-# build script scope).
+# Declares the project name first
 project("llamacpp")
+
+# Create a static library with our ggml_fopen override
+# This will be linked BEFORE ggml so our implementation takes precedence
+add_library(ggml_override STATIC
+        ggml_fopen_override.c)
+
+# Include llama.cpp subdirectory
+add_subdirectory(llama.cpp)
 
 # Creates and names a library, sets it as either STATIC
 # or SHARED, and provides the relative paths to its source code.
@@ -39,7 +41,16 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
 # Specifies libraries CMake should link to your target library. You
 # can link libraries from various origins, such as libraries defined in this
 # build script, prebuilt third-party libraries, or Android system libraries.
+# NOTE: ggml_override is linked FIRST so our ggml_fopen takes precedence
+# We use --whole-archive to force inclusion and --allow-multiple-definition to
+# allow our symbol to coexist with the one from ggml (first definition wins)
 target_link_libraries(${CMAKE_PROJECT_NAME}
+        # Linker flags to allow multiple definitions (first wins)
+        -Wl,--allow-multiple-definition
+        # Our override library - linked first with whole-archive to ensure inclusion
+        -Wl,--whole-archive
+        ggml_override
+        -Wl,--no-whole-archive
         # List libraries link to the target library
         common
         llama

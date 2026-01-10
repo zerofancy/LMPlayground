@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -39,13 +40,18 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.navigation.fragment.findNavController
+import com.druk.lmplayground.MainActivity
+import com.druk.lmplayground.R
 import com.druk.lmplayground.models.SelectModelDialog
+import com.druk.lmplayground.storage.StorageViewModel
 import com.druk.lmplayground.theme.PlaygroundTheme
 import kotlinx.coroutines.launch
 
 class ConversationFragment : Fragment() {
 
     private val viewModel: ConversationViewModel by viewModels()
+    private val storageViewModel: StorageViewModel by viewModels()
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreateView(
@@ -63,6 +69,10 @@ class ConversationFragment : Fragment() {
             val modelInfo by viewModel.loadedModel.observeAsState()
             val isModelReady by viewModel.isModelReady.observeAsState(false)
             val models by viewModel.models.observeAsState(emptyList())
+            
+            // Storage configuration state
+            val isStorageConfigured by storageViewModel.isStorageConfigured.observeAsState(true)
+            var showStorageSetupDialog by remember { mutableStateOf(false) }
 
             PlaygroundTheme {
 
@@ -73,13 +83,51 @@ class ConversationFragment : Fragment() {
 
                 val colorScheme = MaterialTheme.colorScheme
                 var modelReport by remember { mutableStateOf<String?>(null) }
+                
+                // Check if storage is configured on first launch
+                LaunchedEffect(Unit) {
+                    storageViewModel.checkStorageConfigured()
+                }
+                
+                // Show setup dialog if storage not configured
+                LaunchedEffect(isStorageConfigured) {
+                    if (!isStorageConfigured) {
+                        showStorageSetupDialog = true
+                    }
+                }
+
+                // Storage Setup Dialog
+                if (showStorageSetupDialog && !isStorageConfigured) {
+                    AlertDialog(
+                        onDismissRequest = { /* Cannot dismiss - must choose folder */ },
+                        title = { Text("Choose Storage Folder") },
+                        text = { 
+                            Text("Please select a folder where models will be stored. This is required to use the app.")
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    (activity as? MainActivity)?.launchFolderPicker { uri ->
+                                        if (uri != null) {
+                                            storageViewModel.setStorageFolder(uri)
+                                            showStorageSetupDialog = false
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text("Choose Folder")
+                            }
+                        }
+                    )
+                }
 
                 Scaffold(
                     topBar = {
                         ConversationBar(
                             modelInfo = modelInfo,
                             onNavIconPressed = {
-                                modelReport = viewModel.getReport()
+                                // Navigate to Settings screen
+                                findNavController().navigate(R.id.action_home_to_settings)
                             },
                             scrollBehavior = scrollBehavior,
                             onSelectModelPressed = {
@@ -87,6 +135,10 @@ class ConversationFragment : Fragment() {
                             },
                             onUnloadModelPressed = {
                                 viewModel.unloadModel()
+                            },
+                            onInfoPressed = {
+                                // Show timing report dialog
+                                modelReport = viewModel.getReport()
                             }
                         )
                         if (models.isNotEmpty()) {

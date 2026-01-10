@@ -8,12 +8,12 @@ import android.content.Context.DOWNLOAD_SERVICE
 import android.content.Intent
 import android.content.IntentFilter
 import android.database.Cursor
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.text.format.Formatter
 import androidx.annotation.MainThread
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -26,11 +26,14 @@ import com.druk.llamacpp.LlamaProgressCallback
 import com.druk.lmplayground.App
 import com.druk.lmplayground.models.ModelInfo
 import com.druk.lmplayground.models.ModelInfoProvider
+import com.druk.lmplayground.storage.StoragePreferences
+import com.druk.lmplayground.storage.StorageRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.TreeMap
 import kotlin.math.round
 
@@ -40,15 +43,23 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
     private var llamaModel: LlamaModel? = null
     private var llamaSession: LlamaGenerationSession? = null
     private var generatingJob: Job? = null
+    
+    // Keep strong reference to prevent GC from closing the file descriptor
+    private var modelFileHandle: StorageRepository.ModelFileHandle? = null
+    
     private val _isGenerating = MutableLiveData(false)
     private val _isModelReady = MutableLiveData(false)
     private val _modelLoadingProgress = MutableLiveData(0f)
     private val _loadedModel = MutableLiveData<ModelInfo?>(null)
     private val _models = MutableLiveData<List<ModelInfo>>(emptyList())
+    
     private var downloadModels = TreeMap<Long, ModelInfo>()
     private val downloadManager: DownloadManager by lazy {
         app.getSystemService(DOWNLOAD_SERVICE) as DownloadManager
     }
+    
+    private val storagePreferences = StoragePreferences(app)
+    val storageRepository = StorageRepository(app, storagePreferences)
 
     val isGenerating: LiveData<Boolean> = _isGenerating
     val isModelReady: LiveData<Boolean> = _isModelReady
@@ -71,11 +82,8 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
                 val columnIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                 when (cursor.getInt(columnIndex)) {
                     DownloadManager.STATUS_SUCCESSFUL -> {
-                        val path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                         val filename = model.remoteUri?.lastPathSegment ?: return
-                        val files = path.listFiles()
-                        val file = files?.firstOrNull { it.name == filename } ?: return
-                        loadModel(model.copy(file = file))
+                        handleDownloadComplete(model, filename)
                     }
                     DownloadManager.STATUS_FAILED -> {
                         _loadedModel.postValue(null)
@@ -83,15 +91,68 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
                         _isModelReady.postValue(false)
                     }
                 }
-            }
-            else {
+            } else {
                 _loadedModel.postValue(null)
                 _modelLoadingProgress.postValue(0f)
                 _isModelReady.postValue(false)
             }
+            cursor.close()
             downloadModels.remove(id)
             if (downloadModels.isEmpty()) {
                 handler.removeCallbacks(runnable)
+            }
+        }
+    }
+    
+    private fun handleDownloadComplete(model: ModelInfo, filename: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                // Get downloaded file from app's external files dir
+                val tempFile = File(app.getExternalFilesDir(null), filename)
+                if (!tempFile.exists()) {
+                    _loadedModel.postValue(model.copy(description = "Download file not found"))
+                    return@withContext
+                }
+                
+                _loadedModel.postValue(model.copy(description = "Moving to storage..."))
+                
+                // Copy to SAF folder
+                val storageUri = storageRepository.getStorageUri()
+                if (storageUri == null) {
+                    _loadedModel.postValue(model.copy(description = "Storage not configured"))
+                    return@withContext
+                }
+                
+                val documentFile = DocumentFile.fromTreeUri(app, storageUri)
+                if (documentFile == null) {
+                    _loadedModel.postValue(model.copy(description = "Cannot access storage"))
+                    return@withContext
+                }
+                
+                // Delete existing file if any
+                documentFile.findFile(filename)?.delete()
+                
+                // Create new file in SAF folder
+                val destFile = documentFile.createFile("application/octet-stream", filename)
+                if (destFile == null) {
+                    _loadedModel.postValue(model.copy(description = "Cannot create file"))
+                    return@withContext
+                }
+                
+                try {
+                    app.contentResolver.openOutputStream(destFile.uri)?.use { outputStream ->
+                        tempFile.inputStream().use { inputStream ->
+                            inputStream.copyTo(outputStream, bufferSize = 8192)
+                        }
+                    }
+                    // Delete temp file
+                    tempFile.delete()
+                    
+                    // Load the model
+                    loadModel(model)
+                } catch (e: Exception) {
+                    _loadedModel.postValue(model.copy(description = "Failed to copy: ${e.message}"))
+                }
             }
         }
     }
@@ -110,6 +171,10 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             llamaModel?.unloadModel()
         }
+        // Close the file handle AFTER model is unloaded
+        // Native code uses dup() copies, but we need to close the original
+        modelFileHandle?.close()
+        modelFileHandle = null
         app.unregisterReceiver(downloadReceiver)
         super.onCleared()
     }
@@ -119,7 +184,7 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             withContext(Dispatchers.Default) {
                 _models.postValue(
-                    ModelInfoProvider.buildModelList()
+                    ModelInfoProvider.buildModelList(storageRepository)
                 )
             }
         }
@@ -127,18 +192,37 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
 
     @MainThread
     fun loadModel(modelInfo: ModelInfo) {
-        val file = modelInfo.file ?: return
         val llamaCpp = llamaCpp ?: return
         _models.postValue(emptyList())
         _isModelReady.postValue(false)
+        
         viewModelScope.launch {
             withContext(Dispatchers.Default) {
                 _modelLoadingProgress.postValue(0f)
                 _loadedModel.postValue(
                     modelInfo.copy(description = "Loading...")
                 )
+                
+                // Close any previous file handle
+                modelFileHandle?.close()
+                modelFileHandle = null
+                
+                // Get the file name
+                val fileName = modelInfo.remoteUri?.lastPathSegment ?: return@withContext
+                
+                // Open model file via SAF - returns "fd:N" path format
+                // Our native ggml_fopen/llama_open overrides use dup() to create copies
+                val fileHandle = storageRepository.openModelFile(fileName)
+                if (fileHandle == null) {
+                    _loadedModel.postValue(modelInfo.copy(description = "Cannot open file"))
+                    return@withContext
+                }
+                
+                // IMPORTANT: Keep handle alive while model is loaded (prevents GC from closing fd)
+                modelFileHandle = fileHandle
+                
                 val llamaModel = llamaCpp.loadModel(
-                    file.path,
+                    fileHandle.path,
                     modelInfo.inputPrefix,
                     modelInfo.inputSuffix,
                     modelInfo.antiPrompt,
@@ -221,21 +305,30 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
     fun unloadModel() {
         viewModelScope.launch {
             val loadedModel = _loadedModel.value ?: return@launch
-            if (loadedModel.file != null) {
+            
+            // Check if model is loaded or downloading
+            if (modelFileHandle != null || llamaModel != null) {
                 generatingJob?.cancel()
                 generatingJob = null
                 llamaSession?.destroy()
                 llamaSession = null
-                llamaModel?.unloadModel()
+                llamaModel?.unloadModel()  // Native code closes its dup'd copies via fclose()
+                llamaModel = null
+                
+                // Close the original fd AFTER model is unloaded
+                modelFileHandle?.close()
+                modelFileHandle = null
+                
                 _loadedModel.postValue(null)
                 _isModelReady.postValue(false)
-            }
-            else {
+            } else {
+                // Cancel system download
                 downloadModels.forEach { (id, model) ->
                     if (model.name == loadedModel.name) {
                         downloadManager.remove(id)
                     }
                 }
+                _loadedModel.postValue(null)
                 _isModelReady.postValue(false)
             }
             uiState.resetMessages()
@@ -247,18 +340,22 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
     }
 
     fun downloadModel(model: ModelInfo) {
-        val filename = model.remoteUri?.lastPathSegment ?: return
-        val request = DownloadManager.Request(model.remoteUri)
+        val remoteUri = model.remoteUri ?: return
+        val filename = remoteUri.lastPathSegment ?: return
+        
+        _loadedModel.postValue(model.copy(description = "Starting download..."))
+        _isModelReady.postValue(false)
+        _modelLoadingProgress.postValue(0f)
+        
+        val request = DownloadManager.Request(remoteUri)
         request.setTitle(filename)
         request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-        val downloadManager = app.getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-        request.setDestinationInExternalPublicDir(
-            Environment.DIRECTORY_DOWNLOADS,
-            filename
-        )
+        
+        // Download to app's external files dir, then copy to SAF folder
+        request.setDestinationInExternalFilesDir(app, null, filename)
+        
         val downloadId = downloadManager.enqueue(request)
         downloadModels[downloadId] = model
-        _isModelReady.postValue(false)
         handler.post(runnable)
     }
 
@@ -342,5 +439,4 @@ class ConversationViewModel(val app: Application) : AndroidViewModel(app) {
             else -> "Unknown error occurred"
         }
     }
-
 }
