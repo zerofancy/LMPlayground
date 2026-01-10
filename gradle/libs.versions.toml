@@ -4,7 +4,7 @@
 #####
 [versions]
 accompanist = "0.32.0"
-androidGradlePlugin = "8.9.1"
+androidGradlePlugin = "8.13.2"
 androidx-activity-compose = "1.8.2"
 androidx-appcompat = "1.6.1"
 androidx-benchmark = "1.2.0"
@@ -27,19 +27,18 @@ androix-test-uiautomator = "2.2.0"
 coil = "2.4.0"
 # @keep
 compileSdk = "35"
-compose-compiler = "1.5.4"
+compose-compiler = "2.3.0"
 coroutines = "1.7.3"
 google-maps = "18.2.0"
 gradle-versions = "0.50.0"
 hilt = "2.48.1"
 hiltExt = "1.1.0"
 # @pin When updating to AGP 7.4.0-alpha10 and up we can update this https://developer.android.com/studio/write/java8-support#library-desugaring-versions
-jdkDesugar = "1.2.2"
+jdkDesugar = "2.1.5"
 junit = "4.13.2"
-# @pin Update in conjuction with Compose Compiler
-kotlin = "1.9.20"
+kotlin = "2.3.0"
 kotlinx_immutable = "0.3.5"
-ksp = "1.9.20-1.0.14"
+ksp = "2.3.0"
 maps-compose = "3.1.1"
 material = "1.11.0"
 # @keep
@@ -138,6 +137,7 @@ gradle-versions = { id = "com.github.ben-manes.versions", version.ref = "gradle-
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 secrets = { id = "com.google.android.libraries.mapsplatform.secrets-gradle-plugin", version.ref = "secrets" }
