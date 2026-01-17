@@ -34,7 +34,7 @@ import com.druk.lmplayground.theme.PlaygroundTheme
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
-    onStorageClick: () -> Unit,
+    onModelsClick: () -> Unit,
     appVersion: String
 ) {
     Scaffold(
@@ -54,12 +54,12 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Storage Management row
+            // Models row
             SettingsRow(
                 icon = Icons.Outlined.Storage,
-                title = stringResource(R.string.storage_management),
-                subtitle = stringResource(R.string.storage_management_subtitle),
-                onClick = onStorageClick
+                title = stringResource(R.string.models),
+                subtitle = stringResource(R.string.models_subtitle),
+                onClick = onModelsClick
             )
             
             Spacer(Modifier.weight(1f))
@@ -120,7 +120,7 @@ private fun SettingsScreenPreview() {
     PlaygroundTheme {
         SettingsScreen(
             onBackClick = {},
-            onStorageClick = {},
+            onModelsClick = {},
             appVersion = "1.0.0"
         )
     }

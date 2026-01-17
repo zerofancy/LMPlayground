@@ -25,8 +25,8 @@ class SettingsFragment : Fragment() {
             PlaygroundTheme {
                 SettingsScreen(
                     onBackClick = { findNavController().popBackStack() },
-                    onStorageClick = { 
-                        findNavController().navigate(R.id.action_settings_to_storage) 
+                    onModelsClick = { 
+                        findNavController().navigate(R.id.action_settings_to_models) 
                     },
                     appVersion = BuildConfig.VERSION_NAME
                 )

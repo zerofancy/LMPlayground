@@ -6,6 +6,7 @@ import android.os.ParcelFileDescriptor
 import android.os.StatFs
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.druk.lmplayground.models.ModelInfoProvider
 import java.net.URLDecoder
 
 class StorageRepository(
@@ -61,19 +62,11 @@ class StorageRepository(
                 Log.d(TAG, "getModelFiles() - found model: $name")
                 ModelFile(
                     name = name,
-                    displayName = getDisplayName(name),
+                    displayName = ModelInfoProvider.getDisplayName(name),
                     sizeBytes = file.length(),
                     uri = file.uri
                 )
             }
-    }
-
-    private fun getDisplayName(fileName: String): String {
-        return fileName
-            .removeSuffix(".gguf")
-            .replace("-Q4_K_M", "")
-            .replace("-", " ")
-            .replace("_", " ")
     }
 
     fun getStorageInfo(): StorageInfo {

@@ -1,17 +1,17 @@
 package com.druk.lmplayground.models
 
 import android.net.Uri
-import java.io.File
 
+/**
+ * Static model definition - does not contain download status
+ */
 data class ModelInfo(
     val name: String,
-    val file: File? = null,
-    val remoteUri: Uri? = null,
-    val downloadId: Long? = null,
-    val inputPrefix: String? = null,
-    val inputSuffix: String? = null,
+    val filename: String,
+    val remoteUri: Uri,
+    val inputPrefix: String = "",
+    val inputSuffix: String = "",
     val antiPrompt: Array<String> = emptyArray(),
-    val obsolete: Boolean = false,
     val description: String
 ) {
     override fun equals(other: Any?): Boolean {
@@ -21,9 +21,8 @@ data class ModelInfo(
         other as ModelInfo
 
         if (name != other.name) return false
-        if (file != other.file) return false
+        if (filename != other.filename) return false
         if (remoteUri != other.remoteUri) return false
-        if (downloadId != other.downloadId) return false
         if (inputPrefix != other.inputPrefix) return false
         if (inputSuffix != other.inputSuffix) return false
         if (!antiPrompt.contentEquals(other.antiPrompt)) return false
@@ -34,13 +33,20 @@ data class ModelInfo(
 
     override fun hashCode(): Int {
         var result = name.hashCode()
-        result = 31 * result + (file?.hashCode() ?: 0)
-        result = 31 * result + (remoteUri?.hashCode() ?: 0)
-        result = 31 * result + (downloadId?.hashCode() ?: 0)
-        result = 31 * result + (inputPrefix?.hashCode() ?: 0)
-        result = 31 * result + (inputSuffix?.hashCode() ?: 0)
+        result = 31 * result + filename.hashCode()
+        result = 31 * result + remoteUri.hashCode()
+        result = 31 * result + inputPrefix.hashCode()
+        result = 31 * result + inputSuffix.hashCode()
         result = 31 * result + antiPrompt.contentHashCode()
         result = 31 * result + description.hashCode()
         return result
     }
 }
+
+/**
+ * Model with its download status
+ */
+data class ModelWithStatus(
+    val model: ModelInfo,
+    val isDownloaded: Boolean
+)

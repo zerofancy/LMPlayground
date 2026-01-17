@@ -1,34 +1,43 @@
 package com.druk.lmplayground.models
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.druk.lmplayground.R
 
 @Composable
 fun SelectModelDialog(
-    models: List<ModelInfo>,
-    onDownloadModel: (ModelInfo) -> Unit,
+    models: List<ModelWithStatus>,
     onLoadModel: (ModelInfo) -> Unit,
+    onBrowseModels: () -> Unit,
     onDismissRequest: () -> Unit
 ) {
+    // Only show downloaded models
+    val downloadedModels = models.filter { it.isDownloaded }
+    
     Dialog(onDismissRequest = { onDismissRequest() }) {
         Card(
             modifier = Modifier
@@ -37,19 +46,47 @@ fun SelectModelDialog(
             shape = RoundedCornerShape(16.dp),
         ) {
             LazyColumn {
-                for (index in models.indices) {
-                    val model = models[index]
+                if (downloadedModels.isEmpty()) {
                     item {
-                        Model(model = model) {
-                            onDismissRequest()
-                            if (model.file != null) {
-                                onLoadModel(model)
-                            }
-                            else {
-                                onDownloadModel(model)
+                        Text(
+                            text = stringResource(R.string.no_downloaded_models),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                } else {
+                    for (index in downloadedModels.indices) {
+                        val modelWithStatus = downloadedModels[index]
+                        item {
+                            Model(model = modelWithStatus.model) {
+                                onDismissRequest()
+                                onLoadModel(modelWithStatus.model)
                             }
                         }
                     }
+                }
+                
+                item {
+                    Divider(modifier = Modifier.padding(horizontal = 8.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = {
+                            onDismissRequest()
+                            onBrowseModels()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text(stringResource(R.string.browse_more_models))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
@@ -83,23 +120,12 @@ fun Model(
                 maxLines = 2
             )
         }
-        if (model.file != null) {
-            Icon(
-                imageVector = Icons.Outlined.AutoAwesome,
-                modifier = Modifier.padding(4.dp),
-                tint = MaterialTheme.colorScheme.onSurface,
-                contentDescription = null
-            )
-        }
-        else {
-            Icon(
-                imageVector = Icons.Outlined.FileDownload,
-                modifier = Modifier.padding(4.dp),
-                tint = MaterialTheme.colorScheme.onSurface,
-                contentDescription = null
-            )
-        }
-
+        Icon(
+            imageVector = Icons.Outlined.AutoAwesome,
+            modifier = Modifier.padding(4.dp),
+            tint = MaterialTheme.colorScheme.onSurface,
+            contentDescription = null
+        )
     }
 }
 
@@ -107,22 +133,11 @@ fun Model(
 @Composable
 fun SelectModelDialogPreview() {
     SelectModelDialog(
-        models = listOf(
-            ModelInfo(
-                name = "Gemma 2b it q4 k m",
-                description = "645Mb"
-            ),
-            ModelInfo(
-                name = "Gemma 2b it q4 k m",
-                description = "645Mb"
-            ),
-            ModelInfo(
-                name = "Gemma 2b it q4 k m",
-                description = "645Mb"
-            ),
-        ),
-        onDownloadModel = { },
+        models = ModelInfoProvider.allModels.take(3).mapIndexed { index, model ->
+            ModelWithStatus(model = model, isDownloaded = index < 2)
+        },
         onLoadModel = { },
+        onBrowseModels = { },
         onDismissRequest = { }
     )
 }

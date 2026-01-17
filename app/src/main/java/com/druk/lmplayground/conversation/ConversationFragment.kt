@@ -7,9 +7,12 @@ import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -32,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -67,12 +72,17 @@ class ConversationFragment : Fragment() {
             val isGenerating by viewModel.isGenerating.observeAsState()
             val progress by viewModel.modelLoadingProgress.observeAsState(0f)
             val modelInfo by viewModel.loadedModel.observeAsState()
+            val modelStatus by viewModel.loadedModelStatus.observeAsState()
             val isModelReady by viewModel.isModelReady.observeAsState(false)
             val models by viewModel.models.observeAsState(emptyList())
             
             // Storage configuration state
             val isStorageConfigured by storageViewModel.isStorageConfigured.observeAsState(true)
             var showStorageSetupDialog by remember { mutableStateOf(false) }
+            
+            // Migration state
+            val pendingMigration by storageViewModel.pendingMigration.observeAsState()
+            val migrationProgress by storageViewModel.migrationProgress.observeAsState()
 
             PlaygroundTheme {
 
@@ -97,7 +107,7 @@ class ConversationFragment : Fragment() {
                 }
 
                 // Storage Setup Dialog
-                if (showStorageSetupDialog && !isStorageConfigured) {
+                if (showStorageSetupDialog && !isStorageConfigured && pendingMigration == null) {
                     AlertDialog(
                         onDismissRequest = { /* Cannot dismiss - must choose folder */ },
                         title = { Text("Choose Storage Folder") },
@@ -109,7 +119,7 @@ class ConversationFragment : Fragment() {
                                 onClick = {
                                     (activity as? MainActivity)?.launchFolderPicker { uri ->
                                         if (uri != null) {
-                                            storageViewModel.setStorageFolder(uri)
+                                            storageViewModel.requestStorageFolderChange(uri)
                                             showStorageSetupDialog = false
                                         }
                                     }
@@ -120,11 +130,68 @@ class ConversationFragment : Fragment() {
                         }
                     )
                 }
+                
+                // Migration confirmation dialog
+                pendingMigration?.let { migration ->
+                    val totalSize = migration.modelsToMigrate.sumOf { it.sizeBytes }
+                    val sizeFormatted = android.text.format.Formatter.formatFileSize(context, totalSize)
+                    
+                    AlertDialog(
+                        onDismissRequest = { storageViewModel.cancelMigration() },
+                        title = { Text("Migrate Models?") },
+                        text = {
+                            Column {
+                                Text(
+                                    if (migration.isFromDownloads) {
+                                        "Found ${migration.modelsToMigrate.size} model(s) ($sizeFormatted) in your Downloads folder. Would you like to move them to the selected storage location?"
+                                    } else {
+                                        "Found ${migration.modelsToMigrate.size} model(s) ($sizeFormatted) in the previous folder. Would you like to copy them to the new location?"
+                                    }
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { storageViewModel.confirmMigration() }) {
+                                Text("Migrate")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { storageViewModel.skipMigration() }) {
+                                Text("Skip")
+                            }
+                        }
+                    )
+                }
+                
+                // Migration progress dialog
+                migrationProgress?.let { progress ->
+                    AlertDialog(
+                        onDismissRequest = { /* Cannot dismiss while migrating */ },
+                        title = { Text("Migrating Models") },
+                        text = {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text("Copying ${progress.currentIndex} of ${progress.totalCount}")
+                                Text(
+                                    text = progress.currentModel,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        confirmButton = { }
+                    )
+                }
 
                 Scaffold(
                     topBar = {
                         ConversationBar(
                             modelInfo = modelInfo,
+                            modelStatus = modelStatus,
                             onNavIconPressed = {
                                 // Navigate to Settings screen
                                 findNavController().navigate(R.id.action_home_to_settings)
@@ -142,18 +209,28 @@ class ConversationFragment : Fragment() {
                             }
                         )
                         if (models.isNotEmpty()) {
-                            SelectModelDialog(
-                                models = models,
-                                onDownloadModel = { model ->
-                                    viewModel.downloadModel(model)
-                                },
-                                onLoadModel = { model ->
-                                    viewModel.loadModel(model)
-                                },
-                                onDismissRequest = {
+                            // Check if any models are downloaded
+                            val hasDownloadedModels = models.any { it.isDownloaded }
+                            if (hasDownloadedModels) {
+                                SelectModelDialog(
+                                    models = models,
+                                    onLoadModel = { model ->
+                                        viewModel.loadModel(model)
+                                    },
+                                    onBrowseModels = {
+                                        findNavController().navigate(R.id.action_home_to_models)
+                                    },
+                                    onDismissRequest = {
+                                        viewModel.resetModelList()
+                                    }
+                                )
+                            } else {
+                                // No downloaded models - go directly to Models screen
+                                LaunchedEffect(Unit) {
                                     viewModel.resetModelList()
+                                    findNavController().navigate(R.id.action_home_to_models)
                                 }
-                            )
+                            }
                         }
                         else if (modelReport != null) {
                             AlertDialog(

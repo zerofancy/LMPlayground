@@ -2,6 +2,7 @@
 
 package com.druk.lmplayground.conversation
 
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +42,7 @@ const val ConversationBarTestTag = "ConversationBarTestTag"
 @Composable
 fun ConversationBar(
     modelInfo: ModelInfo?,
+    modelStatus: String? = null,
     modifier: Modifier = Modifier,
     scrollBehavior: TopAppBarScrollBehavior? = null,
     onSelectModelPressed: () -> Unit = { },
@@ -80,7 +82,7 @@ fun ConversationBar(
                                 maxLines = 1
                             )
                             Text(
-                                text = modelInfo.description,
+                                text = modelStatus ?: modelInfo.description,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -144,11 +146,14 @@ fun ChannelBarPreview() {
 @Composable
 fun ChannelBarWithModelInfoPreview() {
     PlaygroundTheme {
-        ConversationBar(modelInfo =
-            ModelInfo(
+        ConversationBar(
+            modelInfo = ModelInfo(
                 name = "Model Name Model Name Model Name Model Name Model Name",
+                filename = "model.gguf",
+                remoteUri = Uri.parse("https://example.com/model.gguf"),
                 description = "Model Description"
-            )
+            ),
+            modelStatus = "Loading 50%"
         )
     }
 }

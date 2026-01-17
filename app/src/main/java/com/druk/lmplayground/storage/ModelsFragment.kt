@@ -16,7 +16,7 @@ import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
 import com.druk.lmplayground.theme.PlaygroundTheme
 
-class StorageManagementFragment : Fragment() {
+class ModelsFragment : Fragment() {
 
     private val viewModel: StorageViewModel by viewModels()
 
@@ -29,8 +29,13 @@ class StorageManagementFragment : Fragment() {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            viewModel.setStorageFolder(uri)
+            viewModel.requestStorageFolderChange(uri)
         }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        viewModel.loadStorageInfo()
     }
 
     override fun onCreateView(
@@ -41,24 +46,45 @@ class StorageManagementFragment : Fragment() {
         layoutParams = LayoutParams(MATCH_PARENT, MATCH_PARENT)
         setContent {
             val storageInfo by viewModel.storageInfo.observeAsState()
-            val downloadedModels by viewModel.downloadedModels.observeAsState(emptyList())
+            val allModels by viewModel.allModels.observeAsState(emptyList())
+            val downloadingProgress by viewModel.downloadingModels.observeAsState(emptyMap())
+            val snackbarMessage by viewModel.snackbarMessage.observeAsState()
+            val pendingMigration by viewModel.pendingMigration.observeAsState()
+            val migrationProgress by viewModel.migrationProgress.observeAsState()
 
             PlaygroundTheme {
-                StorageManagementScreen(
+                ModelsScreen(
                     storageInfo = storageInfo,
-                    downloadedModels = downloadedModels,
+                    allModels = allModels,
+                    downloadingModels = downloadingProgress,
+                    snackbarMessage = snackbarMessage,
+                    pendingMigration = pendingMigration,
+                    migrationProgress = migrationProgress,
                     onBackClick = { findNavController().popBackStack() },
                     onChangeFolderClick = { folderPickerLauncher.launch(null) },
                     onDeleteModel = { model -> 
                         viewModel.deleteModel(model)
+                    },
+                    onDownloadModel = { model ->
+                        viewModel.downloadModel(model)
+                    },
+                    onCancelDownload = { model ->
+                        viewModel.cancelDownload(model)
+                    },
+                    onSnackbarDismiss = {
+                        viewModel.clearSnackbar()
+                    },
+                    onConfirmMigration = {
+                        viewModel.confirmMigration()
+                    },
+                    onSkipMigration = {
+                        viewModel.skipMigration()
+                    },
+                    onCancelMigration = {
+                        viewModel.cancelMigration()
                     }
                 )
             }
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        viewModel.loadStorageInfo()
     }
 }
